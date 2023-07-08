@@ -27,7 +27,9 @@ func main() {
 
 	err = os.Mkdir("/newroot", chmod0755)
 	if err != nil {
-		log.Fatal(err)
+		if errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
 	}
 
 	log.Println("Mounting newroot fs")
@@ -65,7 +67,9 @@ func main() {
 	log.Println("Mounting /dev/pts")
 	err = os.Mkdir("/dev/pts", chmod0755)
 	if err != nil {
-		log.Fatal(err)
+		if !errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
 	}
 
 	if err := mount("devpts",
@@ -88,7 +92,9 @@ func main() {
 
 	log.Println("Mounting /dev/mqueue")
 	if err := os.Mkdir("/dev/mqueue", chmod0755); err != nil {
-		log.Fatal(err)
+		if !errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
 	}
 
 	if err := mount("mqueue",
@@ -102,7 +108,9 @@ func main() {
 
 	log.Println("Mounting /dev/shm")
 	if err := os.Mkdir("/dev/shm", chmod1777); err != nil {
-		log.Fatal(err)
+		if !errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
 	}
 
 	if err := mount("shm",
@@ -116,7 +124,9 @@ func main() {
 
 	log.Println("Mounting /dev/hugepages")
 	if err := os.Mkdir("/dev/hugepages", chmod0755); err != nil {
-		log.Fatal(err)
+		if !errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
 	}
 
 	if err := mount("hugetlbfs",
