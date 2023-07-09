@@ -1,5 +1,5 @@
 {
-    "RootDevice": "/dev/vda",
+    "RootDevice": "/dev/vdb",
     "Hostname": "yikes",
     "ImageConfig": {
         "Cmd": ["/bin/sh"],

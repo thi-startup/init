@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 
@@ -24,8 +23,18 @@ func main() {
 		commonMntFlags = unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_NOSUID
 	)
 
+	log.Println("decoding run.json file")
+	config, err := DecodeMachine("/thi/run.json")
+	if err != nil {
+		log.Fatalf("could not parse run.json file %v", err)
+	}
+
+	if err := os.Mkdir("/dev", chmod0755); err != nil {
+		log.Fatal(err)
+	}
+
 	log.Println("mounting /dev")
-	err := mount("devtmpfs", "/dev", "devtmpfs", unix.MS_NOSUID, "mode=0755")
+	err = mount("devtmpfs", "/dev", "devtmpfs", unix.MS_NOSUID, "mode=0755")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,7 +45,7 @@ func main() {
 	}
 
 	log.Println("Mounting newroot fs")
-	if err := mount("/dev/vda", "/newroot", "ext4", unix.MS_RELATIME, ""); err != nil {
+	if err := mount("/dev/vdb", "/newroot", "ext4", unix.MS_RELATIME, ""); err != nil {
 		log.Fatal(err)
 	}
 
@@ -45,8 +54,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("Removing /fly")
-	if err := os.RemoveAll("/init"); err != nil {
+	log.Println("Removing /thi to save space")
+	if err := os.RemoveAll("/thi"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -82,15 +91,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := mount("devpts",
-		"/dev/pts",
-		"devpts",
-		unix.MS_NOEXEC|unix.MS_NOSUID|unix.MS_NOATIME,
-		"mode=0620,gid=5,ptmxmode=666",
-	); err != nil {
-		log.Fatal(err)
-	}
-
 	log.Println("Mounting /dev/mqueue")
 	if err := os.Mkdir("/dev/mqueue", chmod0755); err != nil {
 		log.Fatal(err)
@@ -100,7 +100,7 @@ func main() {
 		"/dev/mqueue",
 		"mqueue",
 		commonMntFlags,
-		"mode=0755",
+		"",
 	); err != nil {
 		log.Fatal(err)
 	}
@@ -160,7 +160,9 @@ func main() {
 
 	log.Println("Mounting /sys")
 	if err := os.Mkdir("/sys", chmod0555); err != nil {
-		log.Fatal(err)
+		if !errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
 	}
 
 	if err := mount("sys",
@@ -189,7 +191,9 @@ func main() {
 	}
 
 	if err := os.Mkdir("/run/lock", fs.FileMode(^uint32(0))); err != nil {
-		log.Fatal(err)
+		if errors.Is(err, os.ErrExist) {
+			log.Fatal(err)
+		}
 	}
 
 	if err := unix.Symlinkat("/proc/self/fd", 0, "/dev/fd"); err != nil {
@@ -436,11 +440,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	config, err := DecodeMachine("run.json")
-	if err != nil {
-		log.Fatalf("could not parse run.json file %v", err)
-	}
-
 	// parse user and  group names
 	username := config.ImageConfig.User
 	if username == "" {
@@ -505,7 +504,9 @@ func main() {
 	}
 
 	if err := os.Mkdir("/etc", chmod0755); err != nil {
-		log.Fatalf("could not create /etc dir: %v", err)
+		if !errors.Is(err, os.ErrExist) {
+			log.Fatalf("could not create /etc dir: %v", err)
+		}
 	}
 
 	if err := os.WriteFile("/etc/hostname", []byte(config.Hostname), chmod0755); err != nil {
@@ -516,15 +517,31 @@ func main() {
 		log.Fatal("no command to execute, exiting now!")
 	}
 
-	reader, writer, err := os.Pipe()
+	stdin, err := os.OpenFile("/proc/1/fd/0", os.O_RDWR, 0755)
 	if err != nil {
-		log.Fatal("could not create read/write pipe for process")
+		log.Fatal(err)
 	}
-	if err := unix.Fchown(int(reader.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
-		log.Fatalf("could not fchown pipe reader: %v", err)
+
+	stdout, err := os.OpenFile("/proc/1/fd/1", os.O_RDWR, 0755)
+	if err != nil {
+		log.Fatal(err)
 	}
-	if err := unix.Fchown(int(writer.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
-		log.Fatalf("could not fchown pipe writer: %v", err)
+
+	stderr, err := os.OpenFile("/proc/1/fd/2", os.O_RDWR, 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := unix.Fchown(int(stdin.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
+		log.Fatalf("could not fchown stdin file: %v", err)
+	}
+
+	if err := unix.Fchown(int(stdout.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
+		log.Fatalf("could not fchown stdin file: %v", err)
+	}
+
+	if err := unix.Fchown(int(stderr.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
+		log.Fatalf("could not fchown stdin file: %v", err)
 	}
 
 	args := func(cmd []string) []string {
@@ -534,22 +551,24 @@ func main() {
 		return cmd[1:]
 	}(config.ImageConfig.Cmd)
 
-	command := &exec.Cmd{
-		Path:   config.ImageConfig.Cmd[0],
-		Args:   args,
-		Stdout: writer,
-		Stderr: writer,
-		Env:    config.ImageConfig.Env,
-		SysProcAttr: &syscall.SysProcAttr{
-			Setpgid:    true,
-			Pgid:       nixUser.Gid,
-			Foreground: true,
+	procAttr := &syscall.ProcAttr{
+		Dir:   config.ImageConfig.WorkingDir,
+		Env:   config.ImageConfig.Env,
+		Files: []uintptr{stdin.Fd(), stdout.Fd(), stderr.Fd()},
+		Sys: &syscall.SysProcAttr{
+			Setpgid: true,
+			Pgid:    nixUser.Gid,
 		},
 	}
-	if err := command.Start(); err != nil {
-		log.Fatalf("failed to start executing comand: %v", err)
+
+	pid, err := syscall.ForkExec(config.ImageConfig.Cmd[0], args, procAttr)
+	if err != nil {
+		log.Fatal(err)
 	}
-	if err := command.Wait(); err != nil {
-		log.Fatalf("failed to wait on executing command: %v", err)
+
+	log.Printf("started process %d\n", pid)
+
+	for {
 	}
+
 }

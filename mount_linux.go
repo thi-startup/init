@@ -77,3 +77,11 @@ func unmount(target string, flags int) error {
 	}
 	return nil
 }
+
+type Mount struct {
+	Source      string
+	Destination string
+	FsType      string
+	Flags       uintptr
+	Data        string
+}
