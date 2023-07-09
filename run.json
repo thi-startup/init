@@ -1,0 +1,10 @@
+{
+    "RootDevice": "/dev/vda",
+    "Hostname": "yikes",
+    "ImageConfig": {
+        "Cmd": ["/bin/sh"],
+        "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+        "WorkingDir": "/",
+        "User": "root"
+    }
+}

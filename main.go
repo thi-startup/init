@@ -5,7 +5,12 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
+	"strings"
+	"syscall"
 
+	"github.com/opencontainers/runc/libcontainer/system"
+	"github.com/opencontainers/runc/libcontainer/user"
 	"golang.org/x/sys/unix"
 )
 
@@ -27,9 +32,7 @@ func main() {
 
 	err = os.Mkdir("/newroot", chmod0755)
 	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
+		log.Fatal(err)
 	}
 
 	log.Println("Mounting newroot fs")
@@ -67,9 +70,7 @@ func main() {
 	log.Println("Mounting /dev/pts")
 	err = os.Mkdir("/dev/pts", chmod0755)
 	if err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
+		log.Fatal(err)
 	}
 
 	if err := mount("devpts",
@@ -92,9 +93,7 @@ func main() {
 
 	log.Println("Mounting /dev/mqueue")
 	if err := os.Mkdir("/dev/mqueue", chmod0755); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
+		log.Fatal(err)
 	}
 
 	if err := mount("mqueue",
@@ -108,9 +107,7 @@ func main() {
 
 	log.Println("Mounting /dev/shm")
 	if err := os.Mkdir("/dev/shm", chmod1777); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
+		log.Fatal(err)
 	}
 
 	if err := mount("shm",
@@ -124,9 +121,7 @@ func main() {
 
 	log.Println("Mounting /dev/hugepages")
 	if err := os.Mkdir("/dev/hugepages", chmod0755); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
+		log.Fatal(err)
 	}
 
 	if err := mount("hugetlbfs",
@@ -437,8 +432,124 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &unix.Rlimit{Cur: 10240, Max: 10240}); err != nil {
+	if err := unix.Setrlimit(0, &unix.Rlimit{Cur: 10240, Max: 10240}); err != nil {
 		log.Fatal(err)
 	}
 
+	config, err := DecodeMachine("run.json")
+	if err != nil {
+		log.Fatalf("could not parse run.json file %v", err)
+	}
+
+	// parse user and  group names
+	username := config.ImageConfig.User
+	if username == "" {
+		username = "root"
+	}
+	usrSplit := strings.Split(username, ":")
+
+	var group user.Group
+	if len(usrSplit) < 1 {
+		log.Fatal("no username set, something is terribly wrong!")
+	} else if len(usrSplit) >= 2 {
+		group, err = user.LookupGroup(usrSplit[1])
+		if err != nil {
+			log.Fatalf("group %s not found: %v", usrSplit[1], err)
+		}
+	}
+	_ = group
+
+	nixUser, err := user.LookupUser(usrSplit[0])
+	if err != nil {
+		log.Fatalf("user %s not found: %v", username, err)
+	}
+
+	if err := system.Setgid(nixUser.Gid); err != nil {
+		log.Fatalf("unable to set group id: %v", err)
+	}
+
+	if err := system.Setuid(nixUser.Uid); err != nil {
+		log.Fatalf("unable to set group id: %v", err)
+	}
+
+	// set environment variables
+	for _, pair := range config.ImageConfig.Env {
+		p := strings.SplitN(pair, "=", 2)
+		if len(p) < 2 {
+			log.Fatal("invalid env var: missing '='")
+		}
+		name, val := p[0], p[1]
+		if name == "" {
+			log.Fatal("invalid env var: name cannot be empty")
+		}
+		if strings.IndexByte(name, 0) >= 0 {
+			log.Fatal("invalid env var: name contains null byte")
+		}
+		if strings.IndexByte(val, 0) >= 0 {
+			log.Fatal("invalid env var: value contains null byte")
+		}
+		if err := os.Setenv(name, val); err != nil {
+			log.Fatalf("could not set env var: system shit: %v", err)
+		}
+	}
+
+	// set the home dir if not already set
+	if envHome := os.Getenv("HOME"); envHome == "" {
+		if err := os.Setenv("HOME", nixUser.Home); err != nil {
+			log.Fatal("unable to set user home directory")
+		}
+	}
+
+	if err := unix.Sethostname([]byte(config.Hostname)); err != nil {
+		log.Fatalf("error setting hostname: %v", err)
+	}
+
+	if err := os.Mkdir("/etc", chmod0755); err != nil {
+		log.Fatalf("could not create /etc dir: %v", err)
+	}
+
+	if err := os.WriteFile("/etc/hostname", []byte(config.Hostname), chmod0755); err != nil {
+		log.Fatalf("error writing /etc/hostname: %v", err)
+	}
+
+	if len(config.ImageConfig.Cmd) < 1 {
+		log.Fatal("no command to execute, exiting now!")
+	}
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		log.Fatal("could not create read/write pipe for process")
+	}
+	if err := unix.Fchown(int(reader.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
+		log.Fatalf("could not fchown pipe reader: %v", err)
+	}
+	if err := unix.Fchown(int(writer.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
+		log.Fatalf("could not fchown pipe writer: %v", err)
+	}
+
+	args := func(cmd []string) []string {
+		if len(cmd) == 1 {
+			return nil
+		}
+		return cmd[1:]
+	}(config.ImageConfig.Cmd)
+
+	command := &exec.Cmd{
+		Path:   config.ImageConfig.Cmd[0],
+		Args:   args,
+		Stdout: writer,
+		Stderr: writer,
+		Env:    config.ImageConfig.Env,
+		SysProcAttr: &syscall.SysProcAttr{
+			Setpgid:    true,
+			Pgid:       nixUser.Gid,
+			Foreground: true,
+		},
+	}
+	if err := command.Start(); err != nil {
+		log.Fatalf("failed to start executing comand: %v", err)
+	}
+	if err := command.Wait(); err != nil {
+		log.Fatalf("failed to wait on executing command: %v", err)
+	}
 }

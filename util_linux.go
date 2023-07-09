@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/opencontainers/runc/libcontainer/user"
 	"golang.org/x/sys/unix"
 )
 
@@ -42,4 +43,12 @@ func pivotRoot(newroot, oldroot string) error {
 	}
 
 	return nil
+}
+
+func userFromName(name string) (user.User, error) {
+	u, err := user.LookupUser(name)
+	if err != nil {
+		return user.User{}, err
+	}
+	return u, nil
 }
