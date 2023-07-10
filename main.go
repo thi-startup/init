@@ -517,33 +517,6 @@ func main() {
 		log.Fatal("no command to execute, exiting now!")
 	}
 
-	stdin, err := os.OpenFile("/proc/1/fd/0", os.O_RDWR, 0755)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	stdout, err := os.OpenFile("/proc/1/fd/1", os.O_RDWR, 0755)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	stderr, err := os.OpenFile("/proc/1/fd/2", os.O_RDWR, 0755)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := unix.Fchown(int(stdin.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
-		log.Fatalf("could not fchown stdin file: %v", err)
-	}
-
-	if err := unix.Fchown(int(stdout.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
-		log.Fatalf("could not fchown stdin file: %v", err)
-	}
-
-	if err := unix.Fchown(int(stderr.Fd()), nixUser.Uid, nixUser.Gid); err != nil {
-		log.Fatalf("could not fchown stdin file: %v", err)
-	}
-
 	args := func(cmd []string) []string {
 		if len(cmd) == 1 {
 			return nil
@@ -554,7 +527,7 @@ func main() {
 	procAttr := &syscall.ProcAttr{
 		Dir:   config.ImageConfig.WorkingDir,
 		Env:   config.ImageConfig.Env,
-		Files: []uintptr{stdin.Fd(), stdout.Fd(), stderr.Fd()},
+		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd()},
 		Sys: &syscall.SysProcAttr{
 			Setpgid: true,
 			Pgid:    nixUser.Gid,
