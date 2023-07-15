@@ -5,9 +5,11 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"os/exec"
 	"strings"
 	"syscall"
 
+	"github.com/creack/pty"
 	"github.com/opencontainers/runc/libcontainer/system"
 	"github.com/opencontainers/runc/libcontainer/user"
 	"golang.org/x/sys/unix"
@@ -524,24 +526,30 @@ func main() {
 		return cmd[1:]
 	}(config.ImageConfig.Cmd)
 
-	procAttr := &syscall.ProcAttr{
-		Dir:   config.ImageConfig.WorkingDir,
-		Env:   config.ImageConfig.Env,
-		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd()},
-		Sys: &syscall.SysProcAttr{
-			Setpgid: true,
-			Pgid:    nixUser.Gid,
-		},
+	cmd := &exec.Cmd{
+		Path: config.ImageConfig.Cmd[0],
+		Args: args,
+		Env:  config.ImageConfig.Env,
+		Dir:  config.ImageConfig.WorkingDir,
 	}
 
-	pid, err := syscall.ForkExec(config.ImageConfig.Cmd[0], args, procAttr)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("started process %d\n", pid)
+	defer ptmx.Close()
 
-	for {
+	if err := cmd.Wait(); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART); err != nil {
+		log.Fatal(err)
 	}
 
 }

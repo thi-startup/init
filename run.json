@@ -2,8 +2,11 @@
     "RootDevice": "/dev/vdb",
     "Hostname": "yikes",
     "ImageConfig": {
-        "Cmd": ["/bin/sh"],
-        "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+        "Cmd": ["/bin/bash"],
+        "Env": [
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "TERM=xterm"
+    ],
         "WorkingDir": "/",
         "User": "root"
     }
