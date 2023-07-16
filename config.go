@@ -10,13 +10,24 @@ type MachineConfig struct {
 	RootDevice  string
 	TTY         bool
 	Hostname    string
+	Mounts      []Mounts
 }
 
 type ImageConfig struct {
 	Cmd        []string
+	Entrypoint []string
 	Env        []string
 	WorkingDir string
 	User       string
+}
+
+type Mounts struct {
+	MountPath  string
+	DevicePath string
+}
+
+type EtcResolv struct {
+	Nameservers []string
 }
 
 func DecodeMachine(path string) (MachineConfig, error) {
