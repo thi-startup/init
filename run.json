@@ -15,5 +15,8 @@
         "DevicePath": "/dev/vdc",
         "MountPath": "/additional"
       }
-    ]
+    ],
+    "EtcResolv": {
+      "Nameservers": ["8.8.8.8", "8.8.4.4"]
+   }
 }
