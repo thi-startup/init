@@ -174,6 +174,18 @@ func main() {
 		log.Fatalf("error writing /etc/hostname: %v", err)
 	}
 
+	if err := WriteEtcResolv(config.EtcResolv); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := WriteEtcHost(config.EtcHost); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := NetworkSetup(); err != nil {
+		log.Fatal(err)
+	}
+
 	p, err := NewProcess(config.ImageConfig)
 	if err != nil {
 		log.Fatal(err)
