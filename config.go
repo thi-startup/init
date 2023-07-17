@@ -7,10 +7,14 @@ import (
 
 type MachineConfig struct {
 	ImageConfig ImageConfig
+	CmdOverride []string
 	RootDevice  string
 	TTY         bool
 	Hostname    string
+	ExtraEnv    []string
 	Mounts      []Mounts
+	EtcResolv   EtcResolv
+	EtcHost     []EtcHost
 }
 
 type ImageConfig struct {
@@ -28,6 +32,12 @@ type Mounts struct {
 
 type EtcResolv struct {
 	Nameservers []string
+}
+
+type EtcHost struct {
+	Host string
+	IP   string
+	Desc string
 }
 
 func DecodeMachine(path string) (MachineConfig, error) {
