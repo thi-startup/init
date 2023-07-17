@@ -3,65 +3,61 @@ package main
 import (
 	"errors"
 	"io/fs"
-	"log"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 
-	"github.com/creack/pty"
 	"github.com/opencontainers/runc/libcontainer/system"
 	"github.com/opencontainers/runc/libcontainer/user"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
+func init() {
+	log.SetOutput(os.Stderr)
+	log.SetLevel(log.DebugLevel)
+}
+
 func main() {
-	log.Println("started init")
+	log.Info("started init")
 
-	const (
-		chmod0755      = unix.S_IRWXU | unix.S_IRGRP | unix.S_IXGRP | unix.S_IROTH
-		chmod0555      = unix.S_IXUSR | unix.S_IRGRP | unix.S_IXGRP | unix.S_IROTH | unix.S_IXOTH
-		chmod1777      = unix.S_IRWXU | unix.S_IRWXG | unix.S_IRWXO | unix.S_ISVTX
-		commonMntFlags = unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_NOSUID
-	)
-
-	log.Println("decoding run.json file")
+	log.Debug("decoding run.json file")
 	config, err := DecodeMachine("/thi/run.json")
 	if err != nil {
 		log.Fatalf("could not parse run.json file %v", err)
 	}
 
-	if err := os.Mkdir("/dev", chmod0755); err != nil {
+	if err := os.Mkdir("/dev", perm0755); err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("mounting /dev")
+	log.Debug("mounting /dev")
 	err = mount("devtmpfs", "/dev", "devtmpfs", unix.MS_NOSUID, "mode=0755")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = os.Mkdir("/newroot", chmod0755)
+	err = os.Mkdir("/newroot", perm0755)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("Mounting newroot fs")
+	log.Debug("Mounting newroot fs")
 	if err := mount("/dev/vdb", "/newroot", "ext4", unix.MS_RELATIME, ""); err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("Moving /dev")
+	log.Debug("Moving /dev")
 	if err := mount("/dev", "/newroot/dev", "", unix.MS_MOVE, ""); err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("Removing /thi to save space")
+	log.Debug("Removing /thi to save space")
 	if err := os.RemoveAll("/thi"); err != nil {
 		log.Fatal(err)
 	}
 
-	log.Println("Switching root")
+	log.Debug("Switching root")
 	if err := os.Chdir("/newroot"); err != nil {
 		log.Fatal(err)
 	}
@@ -78,117 +74,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Println("Mounting /dev/pts")
-	err = os.Mkdir("/dev/pts", chmod0755)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := mount("devpts",
-		"/dev/pts",
-		"devpts",
-		unix.MS_NOEXEC|unix.MS_NOSUID|unix.MS_NOATIME,
-		"mode=0620,gid=5,ptmxmode=666",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /dev/mqueue")
-	if err := os.Mkdir("/dev/mqueue", chmod0755); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := mount("mqueue",
-		"/dev/mqueue",
-		"mqueue",
-		commonMntFlags,
-		"",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /dev/shm")
-	if err := os.Mkdir("/dev/shm", chmod1777); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := mount("shm",
-		"/dev/shm",
-		"tmpfs",
-		unix.MS_NOSUID|unix.MS_NODEV,
-		"",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /dev/hugepages")
-	if err := os.Mkdir("/dev/hugepages", chmod0755); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := mount("hugetlbfs",
-		"/dev/hugepages",
-		"hugetlbfs",
-		unix.MS_RELATIME,
-		"pagesize=2M",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /proc")
-	if err := os.Mkdir("/proc", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("proc",
-		"/proc",
-		"proc",
-		commonMntFlags,
-		"",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := mount("binfmt_misc",
-		"/proc/sys/fs/binfmt_misc",
-		"binfmt_misc",
-		commonMntFlags|unix.MS_RELATIME,
-		"",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys")
-	if err := os.Mkdir("/sys", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("sys",
-		"/sys",
-		"sysfs",
-		commonMntFlags,
-		"",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /run")
-	if err := os.Mkdir("/run", chmod0755); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("run",
-		"/run",
-		"tmpfs",
-		unix.MS_NOSUID|unix.MS_NODEV,
-		"mode=0755",
-	); err != nil {
+	mnts := MakeMounts()
+	if err := mnts.Mount(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -220,221 +107,8 @@ func main() {
 		}
 	}
 
-	const commonCgroupMntFlags = unix.MS_NODEV | unix.MS_NOEXEC | unix.MS_NOSUID | unix.MS_RELATIME
-
-	log.Println("Mounting cgroup")
-	if err := mount("tmpfs",
-		"/sys/fs/cgroup",
-		"tmpfs",
-		unix.MS_NOSUID|unix.MS_NOEXEC|unix.MS_NODEV,
-		"mode=0755",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting cgroup2")
-	if err := os.Mkdir("/sys/fs/cgroup/unified", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup2",
-		"/sys/fs/cgroup/unified",
-		"cgroup2",
-		commonCgroupMntFlags|unix.MS_RELATIME,
-		"nsdelegate",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/net_cls,net_prio")
-	if err := os.Mkdir("/sys/fs/cgroup/net_cls", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := os.Mkdir("/sys/fs/cgroup/net_prio", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/net_cls",
-		"cgroup",
-		commonCgroupMntFlags,
-		"net_cls",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/net_prio",
-		"cgroup",
-		commonCgroupMntFlags,
-		"net_prio",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/hugetlb")
-	if err := os.Mkdir("/sys/fs/cgroup/hugetlb", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/hugetlb",
-		"cgroup",
-		commonCgroupMntFlags,
-		"hugetlb",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/pids")
-	if err := os.Mkdir("/sys/fs/cgroup/pids", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/pids",
-		"cgroup",
-		commonCgroupMntFlags,
-		"pids",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/freezer")
-	if err := os.Mkdir("/sys/fs/cgroup/freezer", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/freezer",
-		"cgroup",
-		commonCgroupMntFlags,
-		"freezer",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/cpu,cpuacct")
-	if err := os.Mkdir("/sys/fs/cgroup/cpuacct", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := os.Mkdir("/sys/fs/cgroup/cpu", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/cpu",
-		"cgroup",
-		commonCgroupMntFlags,
-		"pids",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/cpuacct",
-		"cgroup",
-		commonCgroupMntFlags,
-		"pids",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/devices")
-	if err := os.Mkdir("/sys/fs/cgroup/devices", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/devices",
-		"cgroup",
-		commonCgroupMntFlags,
-		"devices",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/blkio")
-	if err := os.Mkdir("/sys/fs/cgroup/blkio", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/blkio",
-		"cgroup",
-		commonCgroupMntFlags,
-		"blkio",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/memory")
-	if err := os.Mkdir("/sys/fs/cgroup/memory", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/memory",
-		"cgroup",
-		commonCgroupMntFlags,
-		"memory",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/perf_event")
-	if err := os.Mkdir("/sys/fs/cgroup/perf_event", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/perf_event",
-		"cgroup",
-		commonCgroupMntFlags,
-		"perf_event",
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Mounting /sys/fs/cgroup/cpuset")
-	if err := os.Mkdir("/sys/fs/cgroup/cpuset", chmod0555); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
-	}
-
-	if err := mount("cgroup",
-		"/sys/fs/cgroup/cpuset",
-		"cgroup",
-		commonCgroupMntFlags,
-		"cpuset",
-	); err != nil {
+	cgroupMnt := MakeCgroupMounts()
+	if err := cgroupMnt.Mount(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -473,25 +147,8 @@ func main() {
 		log.Fatalf("unable to set group id: %v", err)
 	}
 
-	// set environment variables
-	for _, pair := range config.ImageConfig.Env {
-		p := strings.SplitN(pair, "=", 2)
-		if len(p) < 2 {
-			log.Fatal("invalid env var: missing '='")
-		}
-		name, val := p[0], p[1]
-		if name == "" {
-			log.Fatal("invalid env var: name cannot be empty")
-		}
-		if strings.IndexByte(name, 0) >= 0 {
-			log.Fatal("invalid env var: name contains null byte")
-		}
-		if strings.IndexByte(val, 0) >= 0 {
-			log.Fatal("invalid env var: value contains null byte")
-		}
-		if err := os.Setenv(name, val); err != nil {
-			log.Fatalf("could not set env var: system shit: %v", err)
-		}
+	if err := populateProcessEnv(config.ImageConfig.Env); err != nil {
+		log.Fatal(err)
 	}
 
 	// set the home dir if not already set
@@ -501,55 +158,34 @@ func main() {
 		}
 	}
 
+	if err := MountAdditionalDrives(config.Mounts, nixUser.Uid, nixUser.Gid); err != nil {
+		log.Fatalf("error mounting drives: %v", err)
+	}
+
 	if err := unix.Sethostname([]byte(config.Hostname)); err != nil {
 		log.Fatalf("error setting hostname: %v", err)
 	}
 
-	if err := os.Mkdir("/etc", chmod0755); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatalf("could not create /etc dir: %v", err)
-		}
+	if err := os.Mkdir("/etc", perm0755); err != nil && !os.IsExist(err) {
+		log.Fatalf("could not create /etc dir: %v", err)
 	}
 
-	if err := os.WriteFile("/etc/hostname", []byte(config.Hostname), chmod0755); err != nil {
+	if err := os.WriteFile("/etc/hostname", []byte(config.Hostname+"\n"), perm0755); err != nil {
 		log.Fatalf("error writing /etc/hostname: %v", err)
 	}
 
-	if len(config.ImageConfig.Cmd) < 1 {
-		log.Fatal("no command to execute, exiting now!")
-	}
-
-	args := func(cmd []string) []string {
-		if len(cmd) == 1 {
-			return nil
-		}
-		return cmd[1:]
-	}(config.ImageConfig.Cmd)
-
-	cmd := &exec.Cmd{
-		Path: config.ImageConfig.Cmd[0],
-		Args: args,
-		Env:  config.ImageConfig.Env,
-		Dir:  config.ImageConfig.WorkingDir,
-	}
-
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	ptmx, err := pty.Start(cmd)
+	p, err := NewProcess(config.ImageConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	defer ptmx.Close()
-
-	if err := cmd.Wait(); err != nil {
-		log.Fatal(err)
+	ptmx, err := p.Run()
+	if err != nil {
+		_ = ptmx.Close()
+		log.Printf("error running process: %v", err)
 	}
 
 	if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART); err != nil {
 		log.Fatal(err)
 	}
-
 }

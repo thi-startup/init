@@ -2,12 +2,18 @@
     "RootDevice": "/dev/vdb",
     "Hostname": "yikes",
     "ImageConfig": {
-        "Cmd": ["/bin/bash"],
+        "Cmd": ["bash"],
         "Env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "TERM=xterm"
     ],
         "WorkingDir": "/",
         "User": "root"
-    }
+    },
+    "Mounts": [
+      {
+        "DevicePath": "/dev/vdc",
+        "MountPath": "/additional"
+      }
+    ]
 }
