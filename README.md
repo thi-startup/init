@@ -1,11 +1,11 @@
 # init
 
-This is a simple init system that makes it easy to run docker images as firecracker vms. It is based on fly.io's init and is written in Go. thi/init can boot docker imaged based root filesystem drives without the need to pre configure rc-init or some alternative init system before hand.
+This is a simple init system that makes it easy to run docker images as firecracker vms. It is based on fly.io's init and is written in Go. thi/init can boot docker image based root filesystem drives without the need to pre configure rc-init or some alternative init system before hand.
 
 This project is part of an educational endeavor to build tooling around firecracker to make running micro vms trivial for the average user. We're looking forward to adding more features along the way as we learn more about init systems and linux as a whole.
 
 ### demo
-- spawning a simple bash shell in firecracker
+- spawning a bash shell in firecracker
 
   ![Made with VHS](https://vhs.charm.sh/vhs-6MF5u4Tsar87Ryp1r7yIk6.gif)
 ## Usage
