@@ -1,3 +1,5 @@
 init
 tmpinit
 scratch/
+run.json*
+*.tape

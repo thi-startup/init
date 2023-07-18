@@ -7,9 +7,11 @@ import (
 
 type MachineConfig struct {
 	ImageConfig ImageConfig
+	CmdOverride []string
 	RootDevice  string
 	TTY         bool
 	Hostname    string
+	ExtraEnv    []string
 	Mounts      []Mounts
 	EtcResolv   EtcResolv
 	EtcHost     []EtcHost

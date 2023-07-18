@@ -66,6 +66,42 @@ func (mnts mounts) Mount() error {
 	return nil
 }
 
+func MakeInitialMounts(rootdevice string) mounts {
+	mnts := []mountInfo{}
+
+	mnts = append(mnts, mountInfo{
+		source:       "devtmpfs",
+		target:       "/dev",
+		fstype:       "devtmpfs",
+		flags:        unix.MS_NOSUID,
+		data:         "mode=0755",
+		createTarget: true,
+		perm:         perm0755,
+	})
+
+	mnts = append(mnts, mountInfo{
+		source:       rootdevice,
+		target:       "/newroot",
+		fstype:       "ext4",
+		flags:        unix.MS_RELATIME,
+		data:         "",
+		createTarget: true,
+		perm:         perm0755,
+	})
+
+	mnts = append(mnts, mountInfo{
+		source:       "/dev",
+		target:       "/newroot/dev",
+		fstype:       "",
+		flags:        unix.MS_MOVE,
+		data:         "",
+		createTarget: true,
+		perm:         perm0755,
+	})
+
+	return mnts
+}
+
 func MakeMounts() mounts {
 	mnts := []mountInfo{}
 

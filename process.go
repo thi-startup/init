@@ -12,52 +12,63 @@ import (
 )
 
 type Process struct {
-	cmd *exec.Cmd
+	args       []string
+	env        []string
+	workingDir string
 }
 
-func NewProcess(cfg ImageConfig) (*Process, error) {
-	if len(cfg.Cmd) < 1 {
-		return nil, errors.New("no command to execute")
+func NewProcess(cfg MachineConfig) (*Process, error) {
+	if len(cfg.ImageConfig.Cmd) < 1 && len(cfg.CmdOverride) < 1 {
+		return nil, fmt.Errorf("error no cmd provided")
 	}
 
-	args := append(cfg.Entrypoint, cfg.Cmd...)
-
-	name, args, err := parseCmdArgs(args)
-	if err != nil {
-		return nil, err
+	args := append(cfg.ImageConfig.Entrypoint, cfg.ImageConfig.Cmd...)
+	if len(cfg.CmdOverride) > 0 {
+		args = cfg.CmdOverride
 	}
 
-	c := &exec.Cmd{
-		Path: name,
-		Args: append([]string{name}, args...),
-		Env:  cfg.Env,
-		Dir:  cfg.WorkingDir,
+	envars := append(cfg.ImageConfig.Env, cfg.ExtraEnv...)
+
+	if err := populateProcessEnv(envars); err != nil {
+		return nil, fmt.Errorf("error populating process env: %v", err)
 	}
 
-	c.Stdin = os.Stdin
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-
-	return &Process{cmd: c}, nil
+	return &Process{
+		args:       args,
+		env:        envars,
+		workingDir: cfg.ImageConfig.WorkingDir,
+	}, nil
 }
 
 func (p *Process) Run() (*os.File, error) {
-	logrus.Infof("Running %s", p.cmd.String())
+	lp, err := exec.LookPath(p.args[0])
+	if err != nil {
+		return nil, fmt.Errorf("error searching for process: %v", err)
+	}
 
-	ptmx, err := pty.Start(p.cmd)
+	cmd := &exec.Cmd{
+		Path: lp,
+		Args: p.args,
+		Env:  p.env,
+		Dir:  p.workingDir,
+	}
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	logrus.Infof("Running %s", cmd.String())
+
+	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := p.cmd.Wait(); err != nil {
+	if err := cmd.Wait(); err != nil {
 		return nil, err
 	}
 
 	return ptmx, err
-}
-
-func (p *Process) Wait() error {
-	return p.cmd.Wait()
 }
 
 func parseCmdArgs(cmd []string) (string, []string, error) {

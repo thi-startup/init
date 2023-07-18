@@ -37,7 +37,7 @@ func WriteEtcResolv(entries EtcResolv) error {
 
 	f, err := os.OpenFile("/etc/resolv.conf", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm0755)
 	if err != nil {
-		return fmt.Errorf("error opening resolv.cong: %v", err)
+		return fmt.Errorf("error opening resolv.conf: %v", err)
 	}
 	defer f.Close()
 

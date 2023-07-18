@@ -31,24 +31,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Debug("mounting /dev")
-	err = mount("devtmpfs", "/dev", "devtmpfs", unix.MS_NOSUID, "mode=0755")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = os.Mkdir("/newroot", perm0755)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Debug("Mounting newroot fs")
-	if err := mount("/dev/vdb", "/newroot", "ext4", unix.MS_RELATIME, ""); err != nil {
-		log.Fatal(err)
-	}
-
-	log.Debug("Moving /dev")
-	if err := mount("/dev", "/newroot/dev", "", unix.MS_MOVE, ""); err != nil {
+	initialMnts := MakeInitialMounts(config.RootDevice)
+	if err := initialMnts.Mount(); err != nil {
 		log.Fatal(err)
 	}
 
@@ -186,7 +170,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	p, err := NewProcess(config.ImageConfig)
+	p, err := NewProcess(config)
 	if err != nil {
 		log.Fatal(err)
 	}
