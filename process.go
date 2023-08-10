@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 
-	"github.com/creack/pty"
-	"github.com/sirupsen/logrus"
+	"github.com/charmbracelet/log"
 )
 
 type Process struct {
@@ -40,10 +40,10 @@ func NewProcess(cfg MachineConfig) (*Process, error) {
 	}, nil
 }
 
-func (p *Process) Run() (*os.File, error) {
+func (p *Process) Run() error {
 	lp, err := exec.LookPath(p.args[0])
 	if err != nil {
-		return nil, fmt.Errorf("error searching for process: %v", err)
+		return fmt.Errorf("error searching for process: %v", err)
 	}
 
 	cmd := &exec.Cmd{
@@ -57,18 +57,32 @@ func (p *Process) Run() (*os.File, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	logrus.Infof("Running %s", cmd.String())
+	log.Infof("Running %s", cmd.String())
 
-	ptmx, err := pty.Start(cmd)
+	err = Start(cmd)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := cmd.Wait(); err != nil {
-		return nil, err
+		return err
 	}
 
-	return ptmx, err
+	return err
+}
+
+func Start(cmd *exec.Cmd) error {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setsid = true
+	cmd.SysProcAttr.Setctty = true
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func parseCmdArgs(cmd []string) (string, []string, error) {

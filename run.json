@@ -23,16 +23,10 @@
           "NVIDIA_DRIVER_CAPABILITIES=compute,video,utility",
           "NVIDIA_VISIBLE_DEVICES=all"
         ],
-        "WorkingDir": "/out",
+        "WorkingDir": "/",
         "User": "root"
     },
     "ExtraEnv": ["TERM=xterm"],
-    "Mounts": [
-      {
-        "DevicePath": "/dev/vdc",
-        "MountPath": "/out"
-      }
-    ],
     "EtcResolv": {
       "Nameservers": ["8.8.8.8", "8.8.4.4"]
    }

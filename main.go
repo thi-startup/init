@@ -1,15 +1,14 @@
 package main
 
 import (
-	"errors"
 	"io/fs"
 	"os"
 	"strings"
 	"syscall"
 
+	"github.com/charmbracelet/log"
 	"github.com/opencontainers/runc/libcontainer/system"
 	"github.com/opencontainers/runc/libcontainer/user"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
@@ -21,13 +20,32 @@ func init() {
 func main() {
 	log.Info("started init")
 
+	defer func() {
+		if err := reboot(); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	pid, err := unix.Setsid()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	pgid, err := unix.Getpgid(1)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Infof("pid: %d", pid)
+	log.Infof("pgid: %d", pgid)
+
 	log.Debug("decoding run.json file")
 	config, err := DecodeMachine("/thi/run.json")
 	if err != nil {
 		log.Fatalf("could not parse run.json file %v", err)
 	}
 
-	if err := os.Mkdir("/dev", perm0755); err != nil {
+	if err := mkdir("/dev", perm0755); err != nil {
 		log.Fatal(err)
 	}
 
@@ -63,10 +81,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := os.Mkdir("/run/lock", fs.FileMode(^uint32(0))); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
+	if err := mkdir("/run/lock", fs.FileMode(^uint32(0))); err != nil {
+		log.Fatalf("could not create /run/lock directory: %v", err)
 	}
 
 	if err := unix.Symlinkat("/proc/self/fd", 0, "/dev/fd"); err != nil {
@@ -85,10 +101,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := os.Mkdir("/root", unix.S_IRWXU); err != nil {
-		if !errors.Is(err, os.ErrExist) {
-			log.Fatal(err)
-		}
+	if err := mkdir("/root", unix.S_IRWXU); err != nil {
+		log.Fatalf("could not create /root dir: %v", err)
 	}
 
 	cgroupMnt := MakeCgroupMounts()
@@ -150,7 +164,7 @@ func main() {
 		log.Fatalf("error setting hostname: %v", err)
 	}
 
-	if err := os.Mkdir("/etc", perm0755); err != nil && !os.IsExist(err) {
+	if err := mkdir("/etc", perm0755); err != nil {
 		log.Fatalf("could not create /etc dir: %v", err)
 	}
 
@@ -175,13 +189,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ptmx, err := p.Run()
-	if err != nil {
-		_ = ptmx.Close()
+	if err = p.Run(); err != nil {
 		log.Printf("error running process: %v", err)
 	}
+}
 
-	if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART); err != nil {
-		log.Fatal(err)
+func reboot() error {
+	return syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+}
+
+func mkdir(name string, perm fs.FileMode) error {
+	err := os.Mkdir(name, perm)
+	if err != nil && !os.IsExist(err) {
+		return err
 	}
+
+	return nil
 }
