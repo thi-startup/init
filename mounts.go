@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/charmbracelet/log"
 	"golang.org/x/sys/unix"
 )
 
@@ -53,9 +53,8 @@ func (mnts mounts) Mount() error {
 	for _, m := range mnts {
 		log.Debugf(m.Info())
 		if m.createTarget {
-			err := os.Mkdir(m.target, fs.FileMode(m.perm))
-			if err != nil && !os.IsExist(err) {
-				return err
+			if err := mkdir(m.target, fs.FileMode(m.perm)); err != nil {
+				log.Fatalf("cannot create %s directory: %v", m.target, err)
 			}
 		}
 
