@@ -1,6 +1,7 @@
 init
 tmpinit
 scratch/
+assets/
 run.json*
 *.tape
 demo.*

@@ -26,19 +26,6 @@ func main() {
 		}
 	}()
 
-	pid, err := unix.Setsid()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	pgid, err := unix.Getpgid(1)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Infof("pid: %d", pid)
-	log.Infof("pgid: %d", pgid)
-
 	log.Debug("decoding run.json file")
 	config, err := DecodeMachine("/thi/run.json")
 	if err != nil {
