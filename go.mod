@@ -4,7 +4,6 @@ go 1.20
 
 require (
 	github.com/charmbracelet/log v0.2.2
-	github.com/creack/pty v1.1.18
 	github.com/opencontainers/runc v1.1.7
 	github.com/vishvananda/netlink v1.1.0
 	golang.org/x/sys v0.10.0
